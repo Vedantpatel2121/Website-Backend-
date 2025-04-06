@@ -1,0 +1,26 @@
+service: kplate-pos-backend
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+
+functions:
+  processOrder:
+    handler: handler.processOrder
+    events:
+      - http:
+          path: processOrder
+          method: post
+          cors: true
+
+  getOrders:
+    handler: handler.getOrders
+    events:
+      - http:
+          path: getOrders
+          method: get
+          cors: true
+
+plugins:
+  - serverless-offline  # ✅ Ensure this is listed

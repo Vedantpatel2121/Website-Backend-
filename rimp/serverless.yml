@@ -1,0 +1,14 @@
+service: backend
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+
+functions:
+  paymentHandler:
+    handler: handler.payment
+    events:
+      - httpApi:
+          path: /payment
+          method: post
