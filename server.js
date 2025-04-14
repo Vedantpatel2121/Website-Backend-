@@ -112,7 +112,7 @@ app.get("/api/orders/pending", async (req, res) => {
 });
 
 // ✅ RESERVATION ROUTES
-app.post("/api/reservations", async (req, res) => {
+app.post("/api/table-booking", async (req, res) => {
   const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
   try {
     await pool.query(`
@@ -128,7 +128,6 @@ app.post("/api/reservations", async (req, res) => {
   }
 });
 
-// ✅ NEW: Get available time slots based on guest count and date
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
