@@ -1,3 +1,4 @@
+// ✅ Reservation API Route
 const express = require("express");
 const dotenv = require("dotenv");
 const cors = require("cors");
@@ -8,7 +9,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Middleware (Ensures JSON handling & CORS support)
+// ✅ Middleware
 app.use(cors());
 app.use(express.json());
 app.use(bodyParser.json());
@@ -30,19 +31,14 @@ pool.connect()
     process.exit(1);
   });
 
-// ================================
-// ✅ TEST API Route
-// ================================
+// ✅ TEST Route
 app.get("/", (req, res) => {
   res.send("✅ Website API is running!");
 });
 
-// ================================
-// ✅ MENU MANAGEMENT ROUTES
-// ================================
+// ✅ MENU Routes
 app.get("/api/menu", async (req, res) => {
   try {
-    console.log("🔍 Fetching all menu items...");
     const result = await pool.query("SELECT id, name, category, price::numeric AS price, image FROM menu ORDER BY id ASC");
     const menuItems = result.rows.map(item => ({
       ...item,
@@ -51,46 +47,35 @@ app.get("/api/menu", async (req, res) => {
     }));
     res.json(menuItems);
   } catch (error) {
-    console.error("❌ Error fetching menu:", error);
     res.status(500).json({ error: "❌ Failed to fetch menu", details: error.message });
   }
 });
 
-// ================================
-// ✅ ORDER MANAGEMENT ROUTES
-// ================================
+// ✅ ORDER Routes
 app.get("/api/orders", async (req, res) => {
   try {
-    console.log("🔍 Fetching all orders...");
     const result = await pool.query("SELECT * FROM orders ORDER BY id DESC");
     res.json(result.rows);
   } catch (error) {
-    console.error("❌ Error fetching orders:", error);
     res.status(500).json({ error: "❌ Failed to fetch orders", details: error.message });
   }
 });
 
 app.post("/api/orders", async (req, res) => {
+  const { customer_name, order_number, payment_method, total_amount, status } = req.body;
+  if (!customer_name || !order_number || !payment_method || !total_amount || !status) {
+    return res.status(400).json({ error: "❌ Missing required fields" });
+  }
+
   try {
-    console.log("📩 Received Order Request:", req.body);
-    const { customer_name, order_number, payment_method, total_amount, status } = req.body;
-
-    if (!customer_name || !order_number || !payment_method || !total_amount || !status) {
-      return res.status(400).json({ error: "❌ Missing required fields", receivedData: req.body });
-    }
-
     const query = `
       INSERT INTO orders (customer_name, order_number, payment_method, total_amount, status, order_date, created_at)
       VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING *;
     `;
     const values = [customer_name, order_number, payment_method, total_amount, status];
-
     const result = await pool.query(query, values);
-    console.log("✅ Order Saved:", result.rows[0]);
     res.status(201).json(result.rows[0]);
-
   } catch (error) {
-    console.error("❌ Database Error:", error);
     res.status(500).json({ error: "❌ Failed to save order", details: error.message });
   }
 });
@@ -98,52 +83,115 @@ app.post("/api/orders", async (req, res) => {
 app.delete("/api/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    console.log(`🗑️ Deleting Order ID: ${id}`);
-
     const result = await pool.query("DELETE FROM orders WHERE id = $1 RETURNING *", [id]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "❌ Order not found!" });
-    }
-
-    console.log("✅ Order Deleted:", result.rows[0]);
+    if (result.rowCount === 0) return res.status(404).json({ error: "❌ Order not found!" });
     res.json({ message: "✅ Order deleted successfully", deletedOrder: result.rows[0] });
-
   } catch (error) {
-    console.error("❌ Error deleting order:", error);
     res.status(500).json({ error: "❌ Failed to delete order", details: error.message });
   }
 });
 
-// ✅ GET Order Status by ID (Polling support)
 app.get("/api/orders/:id/status", async (req, res) => {
-  const { id } = req.params;
   try {
+    const { id } = req.params;
     const result = await pool.query("SELECT status FROM orders WHERE id = $1", [id]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "❌ Order not found" });
-    }
+    if (result.rows.length === 0) return res.status(404).json({ error: "❌ Order not found" });
     res.json({ status: result.rows[0].status });
   } catch (error) {
-    console.error("❌ Error checking order status:", error);
     res.status(500).json({ error: "❌ Failed to check order status" });
   }
 });
 
-// ✅ NEW: Get All Pending Orders (for POS)
 app.get("/api/orders/pending", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM orders WHERE status = 'pending' ORDER BY id DESC");
     res.json(result.rows);
   } catch (error) {
-    console.error("❌ Error fetching pending orders:", error);
     res.status(500).json({ error: "❌ Failed to fetch pending orders" });
   }
 });
 
-// ================================
+// ✅ RESERVATION ROUTES
+app.post("/api/reservations", async (req, res) => {
+  const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
+  try {
+    await pool.query(`
+      INSERT INTO table_booking (
+        customer_name, phone_number, table_number, status,
+        start_time, end_time, note, people
+      ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
+      [customer_name, phone_number, table_number, start_time, end_time, note, people || null]
+    );
+    res.status(200).json({ message: "✅ Reservation saved successfully!" });
+  } catch (error) {
+    res.status(500).json({ message: "❌ Failed to save reservation" });
+  }
+});
+
+// ✅ NEW: Get available time slots based on guest count and date
+app.get("/api/reservations/slots", async (req, res) => {
+  const { date, guests } = req.query;
+
+  if (!date || !guests) {
+    return res.status(400).json({ error: "Missing date or guests query parameter" });
+  }
+
+  const guestCount = parseInt(guests);
+  const tableCapacity = {
+    1: 4, 2: 4, 3: 4, 4: 4,
+    5: 8, 6: 8,
+    7: 15,
+  };
+
+  const eligibleTables = Object.entries(tableCapacity)
+    .filter(([_, capacity]) => guestCount <= capacity)
+    .map(([table]) => parseInt(table));
+
+  const allSlots = [];
+  for (let h = 11; h <= 20; h++) {
+    ["00", "30"].forEach((m) => {
+      if (h === 20 && m === "30") return;
+      allSlots.push(`${h.toString().padStart(2, "0")}:${m}`);
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT table_number, start_time, end_time FROM table_booking WHERE DATE(start_time AT TIME ZONE 'UTC') = $1`,
+      [date]
+    );
+
+    const bookingsByTable = {};
+
+    result.rows.forEach(({ table_number, start_time, end_time }) => {
+      if (!bookingsByTable[table_number]) bookingsByTable[table_number] = new Set();
+
+      const start = new Date(start_time);
+      const end = new Date(end_time);
+
+      while (start < end) {
+        const hr = String(start.getHours()).padStart(2, "0");
+        const min = String(start.getMinutes()).padStart(2, "0");
+        bookingsByTable[table_number].add(`${hr}:${min}`);
+        start.setMinutes(start.getMinutes() + 30);
+      }
+    });
+
+    const availableSlots = allSlots.filter((slot) => {
+      return eligibleTables.some((table) => {
+        const booked = bookingsByTable[table];
+        return !(booked && booked.has(slot));
+      });
+    });
+
+    res.json({ availableSlots });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch available slots" });
+  }
+});
+
 // ✅ START SERVER
-// ================================
 app.listen(PORT, () => {
   console.log(`✅ Website Server is running at http://localhost:${PORT}`);
 });
