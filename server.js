@@ -195,6 +195,30 @@ app.get("/api/reservations/slots", async (req, res) => {
   }
 });
 
+// ✅ Stripe Payment Integration
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY); // Add your secret key to .env
+
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: "❌ Amount is required" });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: parseInt(amount), // e.g. 1000 = $10.00
+      currency: "usd",
+      automatic_payment_methods: { enabled: true }
+    });
+
+    res.status(200).json({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error("❌ Stripe Error:", error.message);
+    res.status(500).json({ error: "❌ Failed to create payment intent", details: error.message });
+  }
+});
+
 // ✅ START SERVER
 app.listen(PORT, () => {
   console.log(`✅ Website Server is running at http://localhost:${PORT}`);
