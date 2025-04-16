@@ -8,6 +8,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ✅ Middleware
 app.use(cors({
   origin: ["https://dineease-web.vercel.app", "http://localhost:3000"],
   credentials: true
@@ -15,6 +16,7 @@ app.use(cors({
 app.use(express.json());
 app.use(bodyParser.json());
 
+// ✅ PostgreSQL Pool
 const pool = new Pool({
   user: process.env.DB_USER || "postgres",
   host: process.env.DB_HOST || "localhost",
@@ -31,10 +33,12 @@ pool.connect()
     process.exit(1);
   });
 
+// ✅ Test Route
 app.get("/", (req, res) => {
   res.send("✅ Website API is running!");
 });
 
+// ✅ Menu
 app.get("/api/menu", async (req, res) => {
   try {
     const result = await pool.query("SELECT id, name, category, price::numeric AS price, image FROM menu ORDER BY id ASC");
@@ -49,6 +53,7 @@ app.get("/api/menu", async (req, res) => {
   }
 });
 
+// ✅ Orders
 app.get("/api/orders", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM orders ORDER BY id DESC");
@@ -60,34 +65,42 @@ app.get("/api/orders", async (req, res) => {
 
 app.post("/api/orders", async (req, res) => {
   const {
-    customer_name, order_number, payment_method, total_amount, status, note, source, items
+    customer_name, order_number, payment_method,
+    total_amount, status, note, source, items
   } = req.body;
 
   if (!customer_name || !order_number || !payment_method || !total_amount || !status) {
     return res.status(400).json({ error: "❌ Missing required fields" });
   }
 
+  const client = await pool.connect();
   try {
+    await client.query("BEGIN");
+
     const orderQuery = `
       INSERT INTO orders (customer_name, order_number, payment_method, total_amount, status, order_date, created_at, note, source)
       VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6, $7) RETURNING id;
     `;
     const orderValues = [customer_name, order_number, payment_method, total_amount, status, note || null, source || 'online'];
-    const orderResult = await pool.query(orderQuery, orderValues);
+    const orderResult = await client.query(orderQuery, orderValues);
     const orderId = orderResult.rows[0].id;
 
     if (Array.isArray(items)) {
       for (const item of items) {
-        await pool.query(
+        await client.query(
           "INSERT INTO order_items (order_id, item_name, quantity, price) VALUES ($1, $2, $3, $4)",
           [orderId, item.name, item.quantity, item.price]
         );
       }
     }
 
-    res.status(201).json({ message: "✅ Order saved", orderId });
+    await client.query("COMMIT");
+    res.status(201).json({ message: "✅ Order and items saved", orderId });
   } catch (error) {
+    await client.query("ROLLBACK");
     res.status(500).json({ error: "❌ Failed to save order", details: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -122,6 +135,7 @@ app.get("/api/orders/pending", async (req, res) => {
   }
 });
 
+// ✅ Table Booking
 app.post("/api/table-booking", async (req, res) => {
   const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
 
@@ -143,6 +157,7 @@ app.post("/api/table-booking", async (req, res) => {
   }
 });
 
+// ✅ Available Reservation Slots
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
@@ -205,6 +220,7 @@ app.get("/api/reservations/slots", async (req, res) => {
   }
 });
 
+// ✅ Stripe Payment Intent
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 app.post("/create-payment-intent", async (req, res) => {
@@ -228,6 +244,7 @@ app.post("/create-payment-intent", async (req, res) => {
   }
 });
 
+// ✅ Start Server
 app.listen(PORT, () => {
   console.log(`✅ Website Server is running at http://localhost:${PORT}`);
 });
