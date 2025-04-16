@@ -133,42 +133,66 @@ app.get("/api/orders/pending", async (req, res) => {
   }
 });
 
-// ✅ Table Booking (with booking_date & booking_time fix)
+// ✅ Table Booking - 1 Hour Slot Logic Enforced
 app.post("/api/table-booking", async (req, res) => {
-  const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
+  const {
+    customer_name,
+    phone_number,
+    table_number,
+    start_time,
+    end_time,
+    note,
+    people,
+  } = req.body;
 
-  if (!customer_name || !phone_number || !table_number || !start_time || !end_time || !people) {
+  if (!customer_name || !phone_number || !table_number || !start_time || !people) {
     return res.status(400).json({ message: "❌ Missing required fields" });
   }
 
   try {
     const start = new Date(start_time);
-    const booking_date = start.toISOString().split("T")[0];
-    const booking_time = start.toISOString().split("T")[1].slice(0, 5); // HH:MM
+    const calculatedEnd = new Date(start);
+    calculatedEnd.setHours(start.getHours() + 1);
 
-    await pool.query(`
+    const booking_date = start.toISOString().split("T")[0];
+    const booking_time = start.toISOString().split("T")[1].slice(0, 5);
+
+    await pool.query(
+      `
       INSERT INTO table_booking (
-        customer_name, phone_number, table_number, booking_date,
-        booking_time, start_time, end_time, note, people
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      customer_name,
-      phone_number,
-      table_number,
-      booking_date,
-      booking_time,
-      start_time,
-      end_time,
-      note,
-      people
-    ]);
+        customer_name,
+        phone_number,
+        table_number,
+        booking_date,
+        booking_time,
+        start_time,
+        end_time,
+        note,
+        people
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `,
+      [
+        customer_name,
+        phone_number,
+        table_number,
+        booking_date,
+        booking_time,
+        start.toISOString(),
+        calculatedEnd.toISOString(),
+        note || "",
+        people,
+      ]
+    );
 
     res.status(200).json({ message: "✅ Reservation saved successfully!" });
   } catch (error) {
+    console.error("❌ Booking Error:", error);
     res.status(500).json({ message: "❌ Failed to save reservation", details: error.message });
   }
 });
 
+// ✅ Time Slot Checker
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
@@ -228,7 +252,7 @@ app.get("/api/reservations/slots", async (req, res) => {
   }
 });
 
-// ✅ Stripe
+// ✅ Stripe Payment
 app.post("/create-payment-intent", async (req, res) => {
   try {
     const { amount } = req.body;
