@@ -63,11 +63,11 @@ app.get("/api/orders", async (req, res) => {
 
 app.post("/api/orders", async (req, res) => {
   const {
-    customer_name, order_number, payment_method,
+    customer_name, phone_number, order_number, payment_method,
     total_amount, status, note, source, items
   } = req.body;
 
-  if (!customer_name || !order_number || !payment_method || !total_amount || !status) {
+  if (!customer_name || !phone_number || !order_number || !payment_method || !total_amount || !status) {
     return res.status(400).json({ error: "❌ Missing required fields" });
   }
 
@@ -76,10 +76,10 @@ app.post("/api/orders", async (req, res) => {
     await client.query("BEGIN");
 
     const orderQuery = `
-      INSERT INTO orders (customer_name, order_number, payment_method, total_amount, status, order_date, created_at, note, source)
-      VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), $6, $7) RETURNING id;
+      INSERT INTO orders (customer_name, phone_number, order_number, payment_method, total_amount, status, order_date, created_at, note, source)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW(), $7, $8) RETURNING id;
     `;
-    const orderValues = [customer_name, order_number, payment_method, total_amount, status, note || null, source || 'online'];
+    const orderValues = [customer_name, phone_number, order_number, payment_method, total_amount, status, note || null, source || 'online'];
     const orderResult = await client.query(orderQuery, orderValues);
     const orderId = orderResult.rows[0].id;
 
