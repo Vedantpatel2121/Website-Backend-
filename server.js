@@ -3,12 +3,12 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const { Pool } = require("pg");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ✅ Middleware
 app.use(cors({
   origin: ["https://dineease-web.vercel.app", "http://localhost:3000"],
   credentials: true
@@ -16,7 +16,6 @@ app.use(cors({
 app.use(express.json());
 app.use(bodyParser.json());
 
-// ✅ PostgreSQL Pool
 const pool = new Pool({
   user: process.env.DB_USER || "postgres",
   host: process.env.DB_HOST || "localhost",
@@ -33,7 +32,6 @@ pool.connect()
     process.exit(1);
   });
 
-// ✅ Test Route
 app.get("/", (req, res) => {
   res.send("✅ Website API is running!");
 });
@@ -157,7 +155,6 @@ app.post("/api/table-booking", async (req, res) => {
   }
 });
 
-// ✅ Available Reservation Slots
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
@@ -191,13 +188,10 @@ app.get("/api/reservations/slots", async (req, res) => {
     );
 
     const bookingsByTable = {};
-
     result.rows.forEach(({ table_number, start_time, end_time }) => {
       if (!bookingsByTable[table_number]) bookingsByTable[table_number] = new Set();
-
       const start = new Date(start_time);
       const end = new Date(end_time);
-
       while (start < end) {
         const hr = String(start.getHours()).padStart(2, "0");
         const min = String(start.getMinutes()).padStart(2, "0");
@@ -220,9 +214,7 @@ app.get("/api/reservations/slots", async (req, res) => {
   }
 });
 
-// ✅ Stripe Payment Intent
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
+// ✅ Stripe
 app.post("/create-payment-intent", async (req, res) => {
   try {
     const { amount } = req.body;
@@ -244,7 +236,6 @@ app.post("/create-payment-intent", async (req, res) => {
   }
 });
 
-// ✅ Start Server
 app.listen(PORT, () => {
   console.log(`✅ Website Server is running at http://localhost:${PORT}`);
 });
