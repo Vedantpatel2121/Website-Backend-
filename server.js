@@ -133,7 +133,7 @@ app.get("/api/orders/pending", async (req, res) => {
   }
 });
 
-// ✅ Table Booking - 1 Hour Slot Logic Enforced
+// ✅ Table Booking
 app.post("/api/table-booking", async (req, res) => {
   const {
     customer_name,
@@ -192,7 +192,7 @@ app.post("/api/table-booking", async (req, res) => {
   }
 });
 
-// ✅ Time Slot Checker
+// ✅ Time Slot Checker with Calgary Timezone Fix
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
@@ -221,15 +221,21 @@ app.get("/api/reservations/slots", async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT table_number, start_time, end_time FROM table_booking WHERE DATE(start_time AT TIME ZONE 'UTC') = $1`,
+      `SELECT table_number, start_time, end_time FROM table_booking WHERE DATE(start_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Edmonton') = $1`,
       [date]
     );
 
     const bookingsByTable = {};
     result.rows.forEach(({ table_number, start_time, end_time }) => {
       if (!bookingsByTable[table_number]) bookingsByTable[table_number] = new Set();
-      const start = new Date(start_time);
-      const end = new Date(end_time);
+
+      const start = new Date(
+        new Date(start_time).toLocaleString("en-US", { timeZone: "America/Edmonton" })
+      );
+      const end = new Date(
+        new Date(end_time).toLocaleString("en-US", { timeZone: "America/Edmonton" })
+      );
+
       while (start < end) {
         const hr = String(start.getHours()).padStart(2, "0");
         const min = String(start.getMinutes()).padStart(2, "0");
