@@ -133,7 +133,7 @@ app.get("/api/orders/pending", async (req, res) => {
   }
 });
 
-// ✅ Table Booking
+// ✅ Table Booking (with booking_date & booking_time fix)
 app.post("/api/table-booking", async (req, res) => {
   const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
 
@@ -142,13 +142,27 @@ app.post("/api/table-booking", async (req, res) => {
   }
 
   try {
+    const start = new Date(start_time);
+    const booking_date = start.toISOString().split("T")[0];
+    const booking_time = start.toISOString().split("T")[1].slice(0, 5); // HH:MM
+
     await pool.query(`
       INSERT INTO table_booking (
-        customer_name, phone_number, table_number, status,
-        start_time, end_time, note, people
-      ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
-      [customer_name, phone_number, table_number, start_time, end_time, note, people]
-    );
+        customer_name, phone_number, table_number, booking_date,
+        booking_time, start_time, end_time, note, people
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      customer_name,
+      phone_number,
+      table_number,
+      booking_date,
+      booking_time,
+      start_time,
+      end_time,
+      note,
+      people
+    ]);
+
     res.status(200).json({ message: "✅ Reservation saved successfully!" });
   } catch (error) {
     res.status(500).json({ message: "❌ Failed to save reservation", details: error.message });
@@ -218,10 +232,7 @@ app.get("/api/reservations/slots", async (req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   try {
     const { amount } = req.body;
-
-    if (!amount) {
-      return res.status(400).json({ error: "❌ Amount is required" });
-    }
+    if (!amount) return res.status(400).json({ error: "❌ Amount is required" });
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: parseInt(amount),
