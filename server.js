@@ -3,7 +3,7 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const { Pool } = require("pg");
-const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY); // Stripe
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 dotenv.config();
 const app = express();
@@ -11,13 +11,13 @@ const PORT = process.env.PORT || 5000;
 
 // ✅ Middleware
 app.use(cors({
-  origin: ["https://dineease-web.vercel.app", "http://localhost:3000"],
+  origin: ["https://dineease-web.vercel.app"],
   credentials: true
 }));
 app.use(express.json());
 app.use(bodyParser.json());
 
-// ✅ PostgreSQL Connection Pool
+// ✅ PostgreSQL Pool
 const pool = new Pool({
   user: process.env.DB_USER || "postgres",
   host: process.env.DB_HOST || "localhost",
@@ -34,82 +34,55 @@ pool.connect()
     process.exit(1);
   });
 
-// ✅ Test Route
+// ✅ Test route
 app.get("/", (req, res) => {
   res.send("✅ Website API is running!");
 });
 
-// ========================== 📋 MENU ROUTES ==========================
+/* ================================
+   📋 MENU ROUTES
+================================= */
 app.get("/api/menu", async (req, res) => {
   try {
     const result = await pool.query("SELECT id, name, category, price::numeric AS price FROM menu ORDER BY id ASC");
     const menuItems = result.rows.map(item => ({
       ...item,
-      price: parseFloat(item.price)
+      price: parseFloat(item.price),
+      image: `https://pos-backend-944m.onrender.com/api/menu/${item.id}/image`
     }));
     res.json(menuItems);
   } catch (error) {
-    res.status(500).json({ error: "❌ Failed to fetch menu", details: error.message });
+    console.error("❌ Menu error:", error);
+    res.status(500).json({ error: "❌ Failed to fetch menu" });
   }
 });
 
-// ✅ Serve Menu Image
-app.get("/api/menu/:id/image", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT image FROM menu WHERE id = $1", [req.params.id]);
-    if (!result.rows.length || !result.rows[0].image) {
-      return res.status(404).send("Image not found");
-    }
-    res.set("Content-Type", "image/jpeg");
-    res.send(result.rows[0].image);
-  } catch (error) {
-    res.status(500).send("❌ Error fetching image");
-  }
-});
-
-// ========================== 🧾 ORDER ROUTES ==========================
-app.get("/api/orders", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM orders ORDER BY id DESC");
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "❌ Failed to fetch orders", details: error.message });
-  }
-});
-
+/* ================================
+   🧾 ORDER ROUTES
+================================= */
 app.post("/api/orders", async (req, res) => {
-  const { customer_name, order_number, payment_method, total_amount, status } = req.body;
+  const { customer_name, phone_number, order_number, payment_method, total_amount, status, note, source = "website" } = req.body;
+
   if (!customer_name || !order_number || !payment_method || !total_amount || !status) {
     return res.status(400).json({ error: "❌ Missing required fields" });
   }
 
   try {
-    const query = `
-      INSERT INTO orders (customer_name, order_number, payment_method, total_amount, status, order_date, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW(), NOW()) RETURNING *;
-    `;
-    const values = [customer_name, order_number, payment_method, total_amount, status];
-    const result = await pool.query(query, values);
+    const result = await pool.query(
+      `INSERT INTO orders (customer_name, phone_number, order_number, payment_method, total_amount, status, order_date, source, note)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8) RETURNING *`,
+      [customer_name, phone_number || null, order_number, payment_method, total_amount, status, source, note || null]
+    );
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: "❌ Failed to save order", details: error.message });
-  }
-});
-
-app.delete("/api/orders/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query("DELETE FROM orders WHERE id = $1 RETURNING *", [id]);
-    if (result.rowCount === 0) return res.status(404).json({ error: "❌ Order not found!" });
-    res.json({ message: "✅ Order deleted successfully", deletedOrder: result.rows[0] });
-  } catch (error) {
-    res.status(500).json({ error: "❌ Failed to delete order", details: error.message });
+    console.error("❌ Order error:", error);
+    res.status(500).json({ error: "❌ Failed to save order" });
   }
 });
 
 app.get("/api/orders/:id/status", async (req, res) => {
+  const { id } = req.params;
   try {
-    const { id } = req.params;
     const result = await pool.query("SELECT status FROM orders WHERE id = $1", [id]);
     if (result.rows.length === 0) return res.status(404).json({ error: "❌ Order not found" });
     res.json({ status: result.rows[0].status });
@@ -118,16 +91,9 @@ app.get("/api/orders/:id/status", async (req, res) => {
   }
 });
 
-app.get("/api/orders/pending", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM orders WHERE status = 'pending' ORDER BY id DESC");
-    res.json(result.rows);
-  } catch (error) {
-    res.status(500).json({ error: "❌ Failed to fetch pending orders" });
-  }
-});
-
-// ========================== 🍽️ TABLE BOOKING ==========================
+/* ================================
+   🍽️ TABLE BOOKING
+================================= */
 app.post("/api/table-booking", async (req, res) => {
   const { customer_name, phone_number, table_number, start_time, end_time, note, people } = req.body;
 
@@ -149,7 +115,9 @@ app.post("/api/table-booking", async (req, res) => {
   }
 });
 
-// ✅ Get available time slots
+/* ================================
+   🕒 AVAILABLE TIME SLOTS
+================================= */
 app.get("/api/reservations/slots", async (req, res) => {
   const { date, guests } = req.query;
 
@@ -165,7 +133,7 @@ app.get("/api/reservations/slots", async (req, res) => {
   };
 
   const eligibleTables = Object.entries(tableCapacity)
-    .filter(([_, capacity]) => guestCount <= capacity)
+    .filter(([_, cap]) => guestCount <= cap)
     .map(([table]) => parseInt(table));
 
   const allSlots = [];
@@ -183,13 +151,11 @@ app.get("/api/reservations/slots", async (req, res) => {
     );
 
     const bookingsByTable = {};
-
     result.rows.forEach(({ table_number, start_time, end_time }) => {
       if (!bookingsByTable[table_number]) bookingsByTable[table_number] = new Set();
 
       const start = new Date(start_time);
       const end = new Date(end_time);
-
       while (start < end) {
         const hr = String(start.getHours()).padStart(2, "0");
         const min = String(start.getMinutes()).padStart(2, "0");
@@ -206,30 +172,37 @@ app.get("/api/reservations/slots", async (req, res) => {
     });
 
     res.json({ availableSlots });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch available slots" });
+  } catch (error) {
+    console.error("❌ Slot error:", error);
+    res.status(500).json({ error: "❌ Failed to fetch available slots" });
   }
 });
 
-// ========================== 💳 STRIPE PAYMENT ==========================
+/* ================================
+   💳 STRIPE PAYMENT
+================================= */
 app.post("/create-payment-intent", async (req, res) => {
   try {
     const { amount } = req.body;
-    if (!amount) return res.status(400).json({ error: "❌ Amount is required" });
+
+    if (!amount) {
+      return res.status(400).json({ error: "❌ Amount is required" });
+    }
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: parseInt(amount),
       currency: "usd",
-      automatic_payment_methods: { enabled: true }
+      automatic_payment_methods: { enabled: true },
     });
 
     res.status(200).json({ clientSecret: paymentIntent.client_secret });
   } catch (error) {
-    res.status(500).json({ error: "❌ Stripe Error", details: error.message });
+    console.error("❌ Stripe error:", error.message);
+    res.status(500).json({ error: "❌ Failed to create payment intent", details: error.message });
   }
 });
 
-// ✅ Start Server
+// ✅ Start server
 app.listen(PORT, () => {
   console.log(`✅ Website Server is running at http://localhost:${PORT}`);
 });
