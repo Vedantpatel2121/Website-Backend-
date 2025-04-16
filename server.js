@@ -39,11 +39,11 @@ app.get("/", (req, res) => {
 // ✅ Menu
 app.get("/api/menu", async (req, res) => {
   try {
-    const result = await pool.query("SELECT id, name, category, price::numeric AS price, image FROM menu ORDER BY id ASC");
+    const result = await pool.query("SELECT id, name, category, price::numeric AS price FROM menu ORDER BY id ASC");
     const menuItems = result.rows.map(item => ({
       ...item,
       price: parseFloat(item.price),
-      image: item.image || "https://via.placeholder.com/150"
+      image: `https://pos-backend-944m.onrender.com/api/menu/${item.id}/image`
     }));
     res.json(menuItems);
   } catch (error) {
